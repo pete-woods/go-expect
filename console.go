@@ -16,6 +16,7 @@ package expect
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -24,7 +25,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/creack/pty"
+	"github.com/aymanbagabas/go-pty"
 )
 
 // Console is an interface to automate input and output for interactive
@@ -32,9 +33,9 @@ import (
 // input back on it's tty. Console can also multiplex other sources of input
 // and multiplex its output to other writers.
 type Console struct {
-	opts            ConsoleOpts
-	ptm             *os.File
-	pts             *os.File
+	opts ConsoleOpts
+	ptm  pty.Pty
+	//pts             *os.File
 	passthroughPipe *PassthroughPipe
 	runeReader      *bufio.Reader
 	closers         []io.Closer
@@ -57,7 +58,9 @@ type ConsoleOpts struct {
 // ExpectObserver provides an interface for a function callback that will
 // be called after each Expect operation.
 // matchers will be the list of active matchers when an error occurred,
-//   or a list of matchers that matched `buf` when err is nil.
+//
+//	or a list of matchers that matched `buf` when err is nil.
+//
 // buf is the captured output that was matched against.
 // err is error that might have occurred. May be nil.
 type ExpectObserver func(matchers []Matcher, buf string, err error)
@@ -145,11 +148,17 @@ func NewConsole(opts ...ConsoleOpt) (*Console, error) {
 		}
 	}
 
-	ptm, pts, err := pty.Open()
+	ptm, err := pty.New()
 	if err != nil {
 		return nil, err
 	}
-	closers := append(options.Closers, pts, ptm)
+	//unixPtm, ok := ptm.(pty.UnixPty)
+	//if !ok {
+	//	ptm.Close()
+	//	return nil, fmt.Errorf("expected a Unix pty, got %T", ptm)
+	//}
+	//pts := unixPtm.Slave()
+	closers := append(options.Closers, ptm)
 
 	passthroughPipe, err := NewPassthroughPipe(ptm)
 	if err != nil {
@@ -158,9 +167,9 @@ func NewConsole(opts ...ConsoleOpt) (*Console, error) {
 	closers = append(closers, passthroughPipe)
 
 	c := &Console{
-		opts:            options,
-		ptm:             ptm,
-		pts:             pts,
+		opts: options,
+		ptm:  ptm,
+		//pts:             pts,
 		passthroughPipe: passthroughPipe,
 		runeReader:      bufio.NewReaderSize(passthroughPipe, utf8.UTFMax),
 		closers:         closers,
@@ -181,8 +190,58 @@ func NewConsole(opts ...ConsoleOpt) (*Console, error) {
 // Tty returns Console's pts (slave part of a pty). A pseudoterminal, or pty is
 // a pair of psuedo-devices, one of which, the slave, emulates a real text
 // terminal device.
-func (c *Console) Tty() *os.File {
-	return c.pts
+//
+// Tty is intended for in-process scenarios where you need an io.ReadWriter
+// pointing at the slave end (for example, to drive an in-process function from
+// the Console's tty). For starting child processes attached to the Console,
+// prefer Command or CommandContext, which are portable across platforms.
+func (c *Console) Tty() io.Closer {
+	unixPty, ok := c.ptm.(pty.UnixPty)
+	if ok {
+		return unixPty.Slave()
+	}
+	conPty, ok := c.ptm.(pty.ConPty)
+	if !ok {
+		return io.NopCloser(conPty.InputPipe())
+	}
+	return nil
+}
+
+func (c *Console) In() *os.File {
+	unixPty, ok := c.ptm.(pty.UnixPty)
+	if ok {
+		return unixPty.Slave()
+	}
+	conPty, ok := c.ptm.(pty.ConPty)
+	if !ok {
+		return conPty.InputPipe()
+	}
+	panic("not supported")
+}
+
+func (c *Console) Out() *os.File {
+	unixPty, ok := c.ptm.(pty.UnixPty)
+	if ok {
+		return unixPty.Slave()
+	}
+	conPty, ok := c.ptm.(pty.ConPty)
+	if !ok {
+		return conPty.OutputPipe()
+	}
+	panic("not supported")
+}
+
+// Command returns a *pty.Cmd that, when started, runs the named program with
+// the given arguments attached to the Console's pseudo-terminal.
+func (c *Console) Command(name string, args ...string) *pty.Cmd {
+	return c.ptm.Command(name, args...)
+}
+
+// CommandContext is like Command but includes a context. The provided context
+// is used to terminate the process (by calling Cancel or os.Process.Kill) if
+// the context becomes done before the command completes on its own.
+func (c *Console) CommandContext(ctx context.Context, name string, args ...string) *pty.Cmd {
+	return c.ptm.CommandContext(ctx, name, args...)
 }
 
 // Read reads bytes b from Console's tty.
@@ -216,7 +275,7 @@ func (c *Console) Close() error {
 // Send writes string s to Console's tty.
 func (c *Console) Send(s string) (int, error) {
 	c.Logf("console send: %q", s)
-	n, err := c.ptm.WriteString(s)
+	n, err := c.ptm.Write([]byte(s))
 	for _, observer := range c.opts.SendObservers {
 		observer(s, n, err)
 	}

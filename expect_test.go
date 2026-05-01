@@ -134,7 +134,7 @@ func TestExpectf(t *testing.T) {
 		c.ExpectEOF()
 	}()
 
-	err = Prompt(c.Tty(), c.Tty())
+	err = Prompt(c.In(), c.Out())
 	if err != nil {
 		t.Errorf("Expected no error but got '%s'", err)
 	}
@@ -162,7 +162,7 @@ func TestExpect(t *testing.T) {
 		c.ExpectEOF()
 	}()
 
-	err = Prompt(c.Tty(), c.Tty())
+	err = Prompt(c.In(), c.Out())
 	if err != nil {
 		t.Errorf("Expected no error but got '%s'", err)
 	}
@@ -189,7 +189,7 @@ func TestExpectOutput(t *testing.T) {
 		c.ExpectEOF()
 	}()
 
-	err = Prompt(c.Tty(), c.Tty())
+	err = Prompt(c.In(), c.Out())
 	if err == nil || err != ErrWrongAnswer {
 		t.Errorf("Expected error '%s' but got '%s' instead", ErrWrongAnswer, err)
 	}
@@ -210,7 +210,7 @@ func TestExpectDefaultTimeout(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		Prompt(c.Tty(), c.Tty())
+		Prompt(c.In(), c.Out())
 	}()
 
 	_, err = c.ExpectString("What is 1+2?")
@@ -236,7 +236,7 @@ func TestExpectTimeout(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		Prompt(c.Tty(), c.Tty())
+		Prompt(c.In(), c.Out())
 	}()
 
 	_, err = c.Expect(String("What is 1+2?"), WithTimeout(0))
@@ -262,7 +262,7 @@ func TestExpectDefaultTimeoutOverride(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err = Prompt(c.Tty(), c.Tty())
+		err = Prompt(c.In(), c.Out())
 		if err != nil {
 			t.Errorf("Expected no error but got '%s'", err)
 		}
@@ -297,7 +297,7 @@ func TestConsoleChain(t *testing.T) {
 		c1.ExpectEOF()
 	}()
 
-	c2, err := newTestConsole(t, WithStdin(c1.Tty()), WithStdout(c1.Tty()))
+	c2, err := newTestConsole(t, WithStdin(c1.In()), WithStdout(c1.Out()))
 	if err != nil {
 		t.Errorf("Expected no error but got'%s'", err)
 	}
@@ -312,7 +312,7 @@ func TestConsoleChain(t *testing.T) {
 		c2.ExpectEOF()
 	}()
 
-	err = Prompt(c2.Tty(), c2.Tty())
+	err = Prompt(c2.In(), c2.Out())
 	if err != nil {
 		t.Errorf("Expected no error but got '%s'", err)
 	}
@@ -341,10 +341,7 @@ func TestEditor(t *testing.T) {
 		t.Errorf("Expected no error but got '%s'", err)
 	}
 
-	cmd := exec.Command("vi", file.Name())
-	cmd.Stdin = c.Tty()
-	cmd.Stdout = c.Tty()
-	cmd.Stderr = c.Tty()
+	cmd := c.Command("vi", file.Name())
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -379,10 +376,7 @@ func ExampleConsole_echo() {
 	}
 	defer c.Close()
 
-	cmd := exec.Command("echo")
-	cmd.Stdin = c.Tty()
-	cmd.Stdout = c.Tty()
-	cmd.Stderr = c.Tty()
+	cmd := c.Command("echo")
 
 	err = cmd.Start()
 	if err != nil {
