@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"gotest.tools/v3/assert"
 )
 
 func TestReaderLease(t *testing.T) {
@@ -46,15 +46,15 @@ func TestReaderLease(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				_, err := out.Write([]byte(test.expected))
-				require.Nil(t, err)
+				assert.NilError(t, err)
 			}()
 
 			for i := 0; i < len(test.expected); i++ {
 				p := make([]byte, 1)
 				n, err := tin.Read(p)
-				require.Nil(t, err)
-				require.Equal(t, 1, n)
-				require.Equal(t, test.expected[i], p[0])
+				assert.NilError(t, err)
+				assert.Equal(t, 1, n)
+				assert.Equal(t, test.expected[i], p[0])
 			}
 
 			cancel()

@@ -7,47 +7,48 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
+	"gotest.tools/v3/assert"
+	is "gotest.tools/v3/assert/cmp"
 )
 
 func TestPassthroughPipe(t *testing.T) {
 	r, w := io.Pipe()
 
 	passthroughPipe, err := NewPassthroughPipe(r)
-	require.NoError(t, err)
+	assert.NilError(t, err)
 
 	err = passthroughPipe.SetReadDeadline(time.Now().Add(time.Hour))
-	require.NoError(t, err)
+	assert.NilError(t, err)
 
 	pipeError := errors.New("pipe error")
 	err = w.CloseWithError(pipeError)
-	require.NoError(t, err)
+	assert.NilError(t, err)
 
 	p := make([]byte, 1)
 	_, err = passthroughPipe.Read(p)
-	require.Equal(t, err, pipeError)
+	assert.Check(t, is.ErrorIs(err, pipeError))
 }
 
 func TestPassthroughPipeTimeout(t *testing.T) {
 	r, w := io.Pipe()
 
 	passthroughPipe, err := NewPassthroughPipe(r)
-	require.NoError(t, err)
+	assert.NilError(t, err)
 
 	err = passthroughPipe.SetReadDeadline(time.Now())
-	require.NoError(t, err)
+	assert.NilError(t, err)
 
 	_, err = w.Write([]byte("a"))
-	require.NoError(t, err)
+	assert.NilError(t, err)
 
 	p := make([]byte, 1)
 	_, err = passthroughPipe.Read(p)
-	require.True(t, os.IsTimeout(err))
+	assert.Assert(t, os.IsTimeout(err))
 
 	err = passthroughPipe.SetReadDeadline(time.Time{})
-	require.NoError(t, err)
+	assert.NilError(t, err)
 
 	n, err := passthroughPipe.Read(p)
-	require.Equal(t, 1, n)
-	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+	assert.NilError(t, err)
 }

@@ -21,7 +21,8 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"gotest.tools/v3/assert"
+	is "gotest.tools/v3/assert/cmp"
 )
 
 func TestExpectOptString(t *testing.T) {
@@ -61,17 +62,17 @@ func TestExpectOptString(t *testing.T) {
 		t.Run(test.title, func(t *testing.T) {
 			var options ExpectOpts
 			err := test.opt(&options)
-			require.Nil(t, err)
+			assert.NilError(t, err)
 
 			buf := new(bytes.Buffer)
 			_, err = buf.WriteString(test.data)
-			require.Nil(t, err)
+			assert.NilError(t, err)
 
 			matcher := options.Match(buf)
 			if test.expected {
-				require.NotNil(t, matcher)
+				assert.Assert(t, matcher != nil)
 			} else {
-				require.Nil(t, matcher)
+				assert.Assert(t, is.Nil(matcher))
 			}
 		})
 	}
@@ -114,17 +115,17 @@ func TestExpectOptRegexp(t *testing.T) {
 		t.Run(test.title, func(t *testing.T) {
 			var options ExpectOpts
 			err := test.opt(&options)
-			require.Nil(t, err)
+			assert.NilError(t, err)
 
 			buf := new(bytes.Buffer)
 			_, err = buf.WriteString(test.data)
-			require.Nil(t, err)
+			assert.NilError(t, err)
 
 			matcher := options.Match(buf)
 			if test.expected {
-				require.NotNil(t, matcher)
+				assert.Assert(t, matcher != nil)
 			} else {
-				require.Nil(t, matcher)
+				assert.Assert(t, is.Nil(matcher))
 			}
 		})
 	}
@@ -167,17 +168,17 @@ func TestExpectOptRegexpPattern(t *testing.T) {
 		t.Run(test.title, func(t *testing.T) {
 			var options ExpectOpts
 			err := test.opt(&options)
-			require.Nil(t, err)
+			assert.NilError(t, err)
 
 			buf := new(bytes.Buffer)
 			_, err = buf.WriteString(test.data)
-			require.Nil(t, err)
+			assert.NilError(t, err)
 
 			matcher := options.Match(buf)
 			if test.expected {
-				require.NotNil(t, matcher)
+				assert.Assert(t, matcher != nil)
 			} else {
-				require.Nil(t, matcher)
+				assert.Assert(t, is.Nil(matcher))
 			}
 		})
 	}
@@ -220,13 +221,13 @@ func TestExpectOptError(t *testing.T) {
 		t.Run(test.title, func(t *testing.T) {
 			var options ExpectOpts
 			err := test.opt(&options)
-			require.Nil(t, err)
+			assert.NilError(t, err)
 
 			matcher := options.Match(test.data)
 			if test.expected {
-				require.NotNil(t, matcher)
+				assert.Assert(t, matcher != nil)
 			} else {
-				require.Nil(t, matcher)
+				assert.Assert(t, is.Nil(matcher))
 			}
 		})
 	}
@@ -291,25 +292,25 @@ func TestExpectOptThen(t *testing.T) {
 		t.Run(test.title, func(t *testing.T) {
 			var options ExpectOpts
 			err := test.opt(&options)
-			require.Nil(t, err)
+			assert.NilError(t, err)
 
 			buf := new(bytes.Buffer)
 			_, err = buf.WriteString(test.data)
-			require.Nil(t, err)
+			assert.NilError(t, err)
 
 			matcher := options.Match(buf)
 			if test.match {
-				require.NotNil(t, matcher)
+				assert.Assert(t, matcher != nil)
 
 				cb, ok := matcher.(CallbackMatcher)
 				if ok {
-					require.True(t, ok)
+					assert.Assert(t, ok)
 
 					err = cb.Callback(nil)
-					require.Equal(t, test.expected, err)
+					assert.Check(t, is.ErrorIs(err, test.expected))
 				}
 			} else {
-				require.Nil(t, matcher)
+				assert.Assert(t, is.Nil(matcher))
 			}
 		})
 	}
@@ -388,17 +389,17 @@ func TestExpectOptAll(t *testing.T) {
 		t.Run(test.title, func(t *testing.T) {
 			var options ExpectOpts
 			err := test.opt(&options)
-			require.Nil(t, err)
+			assert.NilError(t, err)
 
 			buf := new(bytes.Buffer)
 			_, err = buf.WriteString(test.data)
-			require.Nil(t, err)
+			assert.NilError(t, err)
 
 			matcher := options.Match(buf)
 			if test.expected {
-				require.NotNil(t, matcher)
+				assert.Assert(t, matcher != nil)
 			} else {
-				require.Nil(t, matcher)
+				assert.Assert(t, is.Nil(matcher))
 			}
 		})
 	}
