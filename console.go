@@ -21,7 +21,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"os"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -204,10 +204,10 @@ func (c *Console) Tty() io.Closer {
 	if !ok {
 		return io.NopCloser(conPty.InputPipe())
 	}
-	return nil
+	return io.NopCloser(strings.NewReader(""))
 }
 
-func (c *Console) In() *os.File {
+func (c *Console) In() io.Reader {
 	unixPty, ok := c.ptm.(pty.UnixPty)
 	if ok {
 		return unixPty.Slave()
@@ -216,10 +216,10 @@ func (c *Console) In() *os.File {
 	if !ok {
 		return conPty.InputPipe()
 	}
-	panic("not supported")
+	return strings.NewReader("")
 }
 
-func (c *Console) Out() *os.File {
+func (c *Console) Out() io.Writer {
 	unixPty, ok := c.ptm.(pty.UnixPty)
 	if ok {
 		return unixPty.Slave()
@@ -228,7 +228,7 @@ func (c *Console) Out() *os.File {
 	if !ok {
 		return conPty.OutputPipe()
 	}
-	panic("not supported")
+	return io.Discard
 }
 
 // Command returns a *pty.Cmd that, when started, runs the named program with
