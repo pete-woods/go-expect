@@ -22,7 +22,7 @@ package expect
 
 import (
 	"context"
-	"io/ioutil"
+	"errors"
 	"log"
 	"os"
 	"os/exec"
@@ -30,6 +30,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"gotest.tools/v3/assert"
 )
 
 func TestExpectf(t *testing.T) {
@@ -45,11 +47,16 @@ func TestExpectf(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		c.Expectf("What is 1+%d?", 1)
-		c.SendLine("2")
-		c.Expectf("What is %s backwards?", "Netflix")
-		c.SendLine("xilfteN")
-		c.ExpectEOF()
+		_, err := c.Expectf("What is 1+%d?", 1)
+		assert.Check(t, err)
+		_, err = c.SendLine("2")
+		assert.Check(t, err)
+		_, err = c.Expectf("What is %s backwards?", "Netflix")
+		assert.Check(t, err)
+		_, err = c.SendLine("xilfteN")
+		assert.Check(t, err)
+		_, err = c.ExpectEOF()
+		assert.Check(t, err)
 	}()
 
 	err = Prompt(c.Tty(), c.Tty())
@@ -73,11 +80,16 @@ func TestExpect(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		c.ExpectString("What is 1+1?")
-		c.SendLine("2")
-		c.ExpectString("What is Netflix backwards?")
-		c.SendLine("xilfteN")
-		c.ExpectEOF()
+		_, err := c.ExpectString("What is 1+1?")
+		assert.Check(t, err)
+		_, err = c.SendLine("2")
+		assert.Check(t, err)
+		_, err = c.ExpectString("What is Netflix backwards?")
+		assert.Check(t, err)
+		_, err = c.SendLine("xilfteN")
+		assert.Check(t, err)
+		_, err = c.ExpectEOF()
+		assert.Check(t, err)
 	}()
 
 	err = Prompt(c.Tty(), c.Tty())
@@ -102,13 +114,16 @@ func TestExpectOutput(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		c.ExpectString("What is 1+1?")
-		c.SendLine("3")
-		c.ExpectEOF()
+		_, err := c.ExpectString("What is 1+1?")
+		assert.Check(t, err)
+		_, err = c.SendLine("3")
+		assert.Check(t, err)
+		_, err = c.ExpectEOF()
+		assert.Check(t, err)
 	}()
 
 	err = Prompt(c.Tty(), c.Tty())
-	if err == nil || err != ErrWrongAnswer {
+	if err == nil || !errors.Is(err, ErrWrongAnswer) {
 		t.Errorf("Expected error '%s' but got '%s' instead", ErrWrongAnswer, err)
 	}
 	testCloser(t, c.Tty())
@@ -180,19 +195,24 @@ func TestExpectDefaultTimeoutOverride(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err = Prompt(c.Tty(), c.Tty())
-		if err != nil {
-			t.Errorf("Expected no error but got '%s'", err)
-		}
+		// Use a local err to avoid racing the Expect calls below on the
+		// test's err variable.
+		err := Prompt(c.Tty(), c.Tty())
+		assert.Check(t, err)
 		time.Sleep(200 * time.Millisecond)
 		c.Tty().Close()
 	}()
 
-	c.ExpectString("What is 1+1?")
-	c.SendLine("2")
-	c.ExpectString("What is Netflix backwards?")
-	c.SendLine("xilfteN")
-	c.Expect(EOF, PTSClosed, WithTimeout(time.Second))
+	_, err = c.ExpectString("What is 1+1?")
+	assert.Check(t, err)
+	_, err = c.SendLine("2")
+	assert.Check(t, err)
+	_, err = c.ExpectString("What is Netflix backwards?")
+	assert.Check(t, err)
+	_, err = c.SendLine("xilfteN")
+	assert.Check(t, err)
+	_, err = c.Expect(EOF, PTSClosed, WithTimeout(time.Second))
+	assert.Check(t, err)
 
 	wg.Wait()
 }
@@ -210,9 +230,12 @@ func TestConsoleChain(t *testing.T) {
 	wg1.Add(1)
 	go func() {
 		defer wg1.Done()
-		c1.ExpectString("What is Netflix backwards?")
-		c1.SendLine("xilfteN")
-		c1.ExpectEOF()
+		_, err := c1.ExpectString("What is Netflix backwards?")
+		assert.Check(t, err)
+		_, err = c1.SendLine("xilfteN")
+		assert.Check(t, err)
+		_, err = c1.ExpectEOF()
+		assert.Check(t, err)
 	}()
 
 	c2, err := newTestConsole(t, WithStdin(c1.Tty()), WithStdout(c1.Tty()))
@@ -225,9 +248,12 @@ func TestConsoleChain(t *testing.T) {
 	wg2.Add(1)
 	go func() {
 		defer wg2.Done()
-		c2.ExpectString("What is 1+1?")
-		c2.SendLine("2")
-		c2.ExpectEOF()
+		_, err := c2.ExpectString("What is 1+1?")
+		assert.Check(t, err)
+		_, err = c2.SendLine("2")
+		assert.Check(t, err)
+		_, err = c2.ExpectEOF()
+		assert.Check(t, err)
 	}()
 
 	err = Prompt(c2.Tty(), c2.Tty())
@@ -258,7 +284,8 @@ func TestStartControllingTty(t *testing.T) {
 		t.Fatalf("Expected no error but got '%s'", err)
 	}
 
-	c.ExpectString("answer-from-ctty")
+	_, err = c.ExpectString("answer-from-ctty")
+	assert.Check(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -279,7 +306,7 @@ func TestEditor(t *testing.T) {
 	}
 	defer testCloser(t, c)
 
-	file, err := ioutil.TempFile("", "")
+	file, err := os.CreateTemp("", "")
 	if err != nil {
 		t.Errorf("Expected no error but got '%s'", err)
 	}
@@ -293,9 +320,12 @@ func TestEditor(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		c.Send("iHello world\x1b")
-		c.SendLine(":wq!")
-		c.ExpectEOF()
+		_, err := c.Send("iHello world\x1b")
+		assert.Check(t, err)
+		_, err = c.SendLine(":wq!")
+		assert.Check(t, err)
+		_, err = c.ExpectEOF()
+		assert.Check(t, err)
 	}()
 
 	err = cmd.Run()
@@ -306,7 +336,7 @@ func TestEditor(t *testing.T) {
 	testCloser(t, c.Tty())
 	wg.Wait()
 
-	data, err := ioutil.ReadFile(file.Name())
+	data, err := os.ReadFile(file.Name())
 	if err != nil {
 		t.Errorf("Expected no error but got '%s'", err)
 	}
@@ -320,7 +350,6 @@ func ExampleConsole_echo() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer c.Close()
 
 	cmd := exec.Command("echo")
 	cmd.Stdin = c.Tty()
@@ -341,6 +370,8 @@ func ExampleConsole_echo() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	c.Close()
 
 	// Output: Hello world
 }

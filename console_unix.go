@@ -44,7 +44,7 @@ func (c *Console) Start(cmd *exec.Cmd) error {
 }
 
 // Tty returns Console's pts (slave part of a pty). A pseudoterminal, or pty is
-// a pair of psuedo-devices, one of which, the slave, emulates a real text
+// a pair of pseudo-devices, one of which, the slave, emulates a real text
 // terminal device.
 //
 // Tty is only available on Unix; Windows ConPTY has no slave file. Use

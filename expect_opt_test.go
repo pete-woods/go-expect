@@ -25,10 +25,10 @@ import (
 	is "gotest.tools/v3/assert/cmp"
 )
 
-func TestExpectOptString(t *testing.T) {
+func TestOptString(t *testing.T) {
 	tests := []struct {
 		title    string
-		opt      ExpectOpt
+		opt      Opt
 		data     string
 		expected bool
 	}{
@@ -60,7 +60,7 @@ func TestExpectOptString(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.title, func(t *testing.T) {
-			var options ExpectOpts
+			var options Opts
 			err := test.opt(&options)
 			assert.NilError(t, err)
 
@@ -78,10 +78,10 @@ func TestExpectOptString(t *testing.T) {
 	}
 }
 
-func TestExpectOptRegexp(t *testing.T) {
+func TestOptRegexp(t *testing.T) {
 	tests := []struct {
 		title    string
-		opt      ExpectOpt
+		opt      Opt
 		data     string
 		expected bool
 	}{
@@ -113,7 +113,7 @@ func TestExpectOptRegexp(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.title, func(t *testing.T) {
-			var options ExpectOpts
+			var options Opts
 			err := test.opt(&options)
 			assert.NilError(t, err)
 
@@ -131,10 +131,10 @@ func TestExpectOptRegexp(t *testing.T) {
 	}
 }
 
-func TestExpectOptRegexpPattern(t *testing.T) {
+func TestOptRegexpPattern(t *testing.T) {
 	tests := []struct {
 		title    string
-		opt      ExpectOpt
+		opt      Opt
 		data     string
 		expected bool
 	}{
@@ -166,7 +166,7 @@ func TestExpectOptRegexpPattern(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.title, func(t *testing.T) {
-			var options ExpectOpts
+			var options Opts
 			err := test.opt(&options)
 			assert.NilError(t, err)
 
@@ -184,10 +184,10 @@ func TestExpectOptRegexpPattern(t *testing.T) {
 	}
 }
 
-func TestExpectOptError(t *testing.T) {
+func TestOptError(t *testing.T) {
 	tests := []struct {
 		title    string
-		opt      ExpectOpt
+		opt      Opt
 		data     error
 		expected bool
 	}{
@@ -219,7 +219,7 @@ func TestExpectOptError(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.title, func(t *testing.T) {
-			var options ExpectOpts
+			var options Opts
 			err := test.opt(&options)
 			assert.NilError(t, err)
 
@@ -233,7 +233,7 @@ func TestExpectOptError(t *testing.T) {
 	}
 }
 
-func TestExpectOptThen(t *testing.T) {
+func TestOptThen(t *testing.T) {
 	var (
 		errFirst  = errors.New("first")
 		errSecond = errors.New("second")
@@ -241,7 +241,7 @@ func TestExpectOptThen(t *testing.T) {
 
 	tests := []struct {
 		title    string
-		opt      ExpectOpt
+		opt      Opt
 		data     string
 		match    bool
 		expected error
@@ -290,7 +290,7 @@ func TestExpectOptThen(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.title, func(t *testing.T) {
-			var options ExpectOpts
+			var options Opts
 			err := test.opt(&options)
 			assert.NilError(t, err)
 
@@ -316,10 +316,10 @@ func TestExpectOptThen(t *testing.T) {
 	}
 }
 
-func TestExpectOptAll(t *testing.T) {
+func TestOptAll(t *testing.T) {
 	tests := []struct {
 		title    string
-		opt      ExpectOpt
+		opt      Opt
 		data     string
 		expected bool
 	}{
@@ -387,7 +387,7 @@ func TestExpectOptAll(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.title, func(t *testing.T) {
-			var options ExpectOpts
+			var options Opts
 			err := test.opt(&options)
 			assert.NilError(t, err)
 

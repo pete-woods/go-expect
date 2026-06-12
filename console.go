@@ -17,9 +17,12 @@ package expect
 import (
 	"bufio"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"os/exec"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -47,26 +50,26 @@ type ConsoleOpts struct {
 	Stdins          []io.Reader
 	Stdouts         []io.Writer
 	Closers         []io.Closer
-	ExpectObservers []ExpectObserver
+	ExpectObservers []Observer
 	SendObservers   []SendObserver
 	ReadTimeout     *time.Duration
 	TermWidth       int
 	TermHeight      int
 }
 
-// ExpectObserver provides an interface for a function callback that will
+// Observer provides an interface for a function callback that will
 // be called after each Expect operation.
 // matchers will be the list of active matchers when an error occurred, or a
 // list of matchers that matched `buf` when err is nil.
 // buf is the captured output that was matched against.
 // err is error that might have occurred. May be nil.
-type ExpectObserver func(matchers []Matcher, buf string, err error)
+type Observer func(matchers []Matcher, buf string, err error)
 
 // SendObserver provides an interface for a function callback that will
 // be called after each Send operation.
 // msg is the string that was sent.
 // num is the number of bytes actually sent.
-// err is the error that might have occured.  May be nil.
+// err is the error that might have occurred.  May be nil.
 type SendObserver func(msg string, num int, err error)
 
 // WithStdout adds writers that Console duplicates writes to, similar to the
@@ -109,8 +112,8 @@ func WithLogger(logger *log.Logger) ConsoleOpt {
 	}
 }
 
-// WithExpectObserver adds an ExpectObserver to allow monitoring Expect operations.
-func WithExpectObserver(observers ...ExpectObserver) ConsoleOpt {
+// WithExpectObserver adds an Observer to allow monitoring Expect operations.
+func WithExpectObserver(observers ...Observer) ConsoleOpt {
 	return func(opts *ConsoleOpts) error {
 		opts.ExpectObservers = append(opts.ExpectObservers, observers...)
 		return nil
@@ -143,6 +146,27 @@ func WithTermSize(width, height int) ConsoleOpt {
 	}
 }
 
+// openPty opens a new pseudo-terminal, retrying transient allocation
+// failures: on macOS, concurrent opens of /dev/ptmx can spuriously fail with
+// a bogus negative errno even when plenty of ptys are available. An
+// immediate retry succeeds.
+func openPty(width, height int) (xpty.Pty, error) {
+	var err error
+	for attempt := 0; attempt < 5; attempt++ {
+		var pty xpty.Pty
+		pty, err = xpty.NewPty(width, height)
+		if err == nil {
+			return pty, nil
+		}
+		var errno syscall.Errno
+		if !errors.As(err, &errno) || int(errno) >= 0 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return nil, err
+}
+
 // NewConsole returns a new Console with the given options.
 func NewConsole(opts ...ConsoleOpt) (*Console, error) {
 	options := ConsoleOpts{
@@ -157,11 +181,13 @@ func NewConsole(opts ...ConsoleOpt) (*Console, error) {
 		}
 	}
 
-	pty, err := xpty.NewPty(options.TermWidth, options.TermHeight)
+	pty, err := openPty(options.TermWidth, options.TermHeight)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open pseudo-terminal: %w", err)
 	}
-	closers := append(options.Closers, pty)
+	closers := make([]io.Closer, 0, len(options.Closers)+2)
+	closers = append(closers, options.Closers...)
+	closers = append(closers, pty)
 
 	passthroughPipe, err := NewPassthroughPipe(pty)
 	if err != nil {

@@ -26,6 +26,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gotest.tools/v3/assert"
 )
 
 // TestHelperProcess is not a real test. It is the subprocess driven by the
@@ -76,10 +78,14 @@ func TestSubprocess(t *testing.T) {
 		t.Fatalf("Expected no error but got '%s'", err)
 	}
 
-	c.ExpectString("What is 1+1?")
-	c.SendLine("2")
-	c.ExpectString("What is Netflix backwards?")
-	c.SendLine("xilfteN")
+	_, err = c.ExpectString("What is 1+1?")
+	assert.Check(t, err)
+	_, err = c.SendLine("2")
+	assert.Check(t, err)
+	_, err = c.ExpectString("What is Netflix backwards?")
+	assert.Check(t, err)
+	_, err = c.SendLine("xilfteN")
+	assert.Check(t, err)
 
 	if code := waitHelper(t, cmd); code != 0 {
 		t.Errorf("Expected exit code 0 but got %d", code)
@@ -88,7 +94,8 @@ func TestSubprocess(t *testing.T) {
 	// The Console holds the pseudo-terminal open, so the subprocess exiting
 	// does not produce an EOF; close the Console to unblock ExpectEOF.
 	testCloser(t, c)
-	c.ExpectEOF()
+	_, err = c.ExpectEOF()
+	assert.Check(t, err)
 }
 
 func TestSubprocessWrongAnswer(t *testing.T) {
@@ -105,15 +112,18 @@ func TestSubprocessWrongAnswer(t *testing.T) {
 		t.Fatalf("Expected no error but got '%s'", err)
 	}
 
-	c.ExpectString("What is 1+1?")
-	c.SendLine("3")
+	_, err = c.ExpectString("What is 1+1?")
+	assert.Check(t, err)
+	_, err = c.SendLine("3")
+	assert.Check(t, err)
 
 	if code := waitHelper(t, cmd); code != 1 {
 		t.Errorf("Expected exit code 1 but got %d", code)
 	}
 
 	testCloser(t, c)
-	c.ExpectEOF()
+	_, err = c.ExpectEOF()
+	assert.Check(t, err)
 }
 
 func TestSubprocessReadTimeout(t *testing.T) {

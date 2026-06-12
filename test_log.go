@@ -40,7 +40,7 @@ func NewTestWriter(t *testing.T) (io.Writer, error) {
 	tw := testWriter{t}
 
 	go func() {
-		defer r.Close()
+		defer func() { _ = r.Close() }()
 
 		br := bufio.NewReader(r)
 
@@ -79,7 +79,7 @@ func StripTrailingEmptyLines(out string) string {
 	}
 
 	for i := len(lines) - 1; i >= 0; i-- {
-		stripped := strings.Replace(lines[i], " ", "", -1)
+		stripped := strings.ReplaceAll(lines[i], " ", "")
 		if len(stripped) == 0 {
 			lines = lines[:len(lines)-1]
 		} else {

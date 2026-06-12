@@ -23,12 +23,12 @@ import (
 	"time"
 )
 
-// ExpectOpt allows settings Expect options.
-type ExpectOpt func(*ExpectOpts) error
+// Opt allows settings Expect options.
+type Opt func(*Opts) error
 
 // WithTimeout sets a read timeout for an Expect statement.
-func WithTimeout(timeout time.Duration) ExpectOpt {
-	return func(opts *ExpectOpts) error {
+func WithTimeout(timeout time.Duration) Opt {
+	return func(opts *Opts) error {
 		opts.ReadTimeout = &timeout
 		return nil
 	}
@@ -40,9 +40,9 @@ type ConsoleCallback func(buf *bytes.Buffer) error
 
 // Then returns an Expect condition to execute a callback if a match is found
 // for the chained matcher.
-func (eo ExpectOpt) Then(f ConsoleCallback) ExpectOpt {
-	return func(opts *ExpectOpts) error {
-		var options ExpectOpts
+func (eo Opt) Then(f ConsoleCallback) Opt {
+	return func(opts *Opts) error {
+		var options Opts
 		err := eo(&options)
 		if err != nil {
 			return err
@@ -58,15 +58,15 @@ func (eo ExpectOpt) Then(f ConsoleCallback) ExpectOpt {
 	}
 }
 
-// ExpectOpts provides additional options on Expect.
-type ExpectOpts struct {
+// Opts provides additional options on Expect.
+type Opts struct {
 	Matchers    []Matcher
 	ReadTimeout *time.Duration
 }
 
-// Match sequentially calls Match on all matchers in ExpectOpts and returns the
+// Match sequentially calls Match on all matchers in Opts and returns the
 // first matcher if a match exists, otherwise nil.
-func (eo ExpectOpts) Match(v interface{}) Matcher {
+func (eo Opts) Match(v interface{}) Matcher {
 	for _, matcher := range eo.Matchers {
 		if matcher.Match(v) {
 			return matcher
@@ -193,10 +193,10 @@ func (rm *regexpMatcher) Criteria() interface{} {
 	return rm.re
 }
 
-// allMatcher fulfills the Matcher interface to match a group of ExpectOpt
+// allMatcher fulfills the Matcher interface to match a group of Opt
 // against any value.
 type allMatcher struct {
-	options ExpectOpts
+	options Opts
 }
 
 func (am *allMatcher) Match(v interface{}) bool {
@@ -213,18 +213,18 @@ func (am *allMatcher) Match(v interface{}) bool {
 }
 
 func (am *allMatcher) Criteria() interface{} {
-	var criterias []interface{}
+	criteria := make([]interface{}, 0, len(am.options.Matchers))
 	for _, matcher := range am.options.Matchers {
-		criterias = append(criterias, matcher.Criteria())
+		criteria = append(criteria, matcher.Criteria())
 	}
-	return criterias
+	return criteria
 }
 
 // All adds an Expect condition to exit if the content read from Console's tty
-// matches all of the provided ExpectOpt, in any order.
-func All(expectOpts ...ExpectOpt) ExpectOpt {
-	return func(opts *ExpectOpts) error {
-		var options ExpectOpts
+// matches all of the provided Opt, in any order.
+func All(expectOpts ...Opt) Opt {
+	return func(opts *Opts) error {
+		var options Opts
 		for _, opt := range expectOpts {
 			if err := opt(&options); err != nil {
 				return err
@@ -240,8 +240,8 @@ func All(expectOpts ...ExpectOpt) ExpectOpt {
 
 // String adds an Expect condition to exit if the content read from Console's
 // tty contains any of the given strings.
-func String(strs ...string) ExpectOpt {
-	return func(opts *ExpectOpts) error {
+func String(strs ...string) Opt {
+	return func(opts *Opts) error {
 		for _, str := range strs {
 			opts.Matchers = append(opts.Matchers, &stringMatcher{
 				str: str,
@@ -253,8 +253,8 @@ func String(strs ...string) ExpectOpt {
 
 // Regexp adds an Expect condition to exit if the content read from Console's
 // tty matches the given Regexp.
-func Regexp(res ...*regexp.Regexp) ExpectOpt {
-	return func(opts *ExpectOpts) error {
+func Regexp(res ...*regexp.Regexp) Opt {
+	return func(opts *Opts) error {
 		for _, re := range res {
 			opts.Matchers = append(opts.Matchers, &regexpMatcher{
 				re: re,
@@ -267,8 +267,8 @@ func Regexp(res ...*regexp.Regexp) ExpectOpt {
 // RegexpPattern adds an Expect condition to exit if the content read from
 // Console's tty matches the given Regexp patterns. Expect returns an error if
 // the patterns were unsuccessful in compiling the Regexp.
-func RegexpPattern(ps ...string) ExpectOpt {
-	return func(opts *ExpectOpts) error {
+func RegexpPattern(ps ...string) Opt {
+	return func(opts *Opts) error {
 		var res []*regexp.Regexp
 		for _, p := range ps {
 			re, err := regexp.Compile(p)
@@ -283,8 +283,8 @@ func RegexpPattern(ps ...string) ExpectOpt {
 
 // Error adds an Expect condition to exit if reading from Console's tty returns
 // one of the provided errors.
-func Error(errs ...error) ExpectOpt {
-	return func(opts *ExpectOpts) error {
+func Error(errs ...error) Opt {
+	return func(opts *Opts) error {
 		for _, err := range errs {
 			opts.Matchers = append(opts.Matchers, &errorMatcher{
 				err: err,
@@ -296,7 +296,7 @@ func Error(errs ...error) ExpectOpt {
 
 // EOF adds an Expect condition to exit if io.EOF is returned from reading
 // Console's tty.
-func EOF(opts *ExpectOpts) error {
+func EOF(opts *Opts) error {
 	return Error(io.EOF)(opts)
 }
 
@@ -306,7 +306,7 @@ func EOF(opts *ExpectOpts) error {
 // https://github.com/kr/pty/issues/21#issuecomment-129381749), on Windows a
 // closed ConPTY surfaces as a broken pipe, and on all platforms a closed
 // Console returns a closed-file error.
-func PTSClosed(opts *ExpectOpts) error {
+func PTSClosed(opts *Opts) error {
 	opts.Matchers = append(opts.Matchers, &closedErrMatcher{})
 	return nil
 }
