@@ -39,7 +39,9 @@ func NewTestWriter(t *testing.T) (io.Writer, error) {
 	r, w := io.Pipe()
 	tw := testWriter{t}
 
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		defer func() { _ = r.Close() }()
 
 		br := bufio.NewReader(r)
@@ -56,6 +58,14 @@ func NewTestWriter(t *testing.T) (io.Writer, error) {
 			}
 		}
 	}()
+
+	// t.Log must not be called once the test completes. Close the pipe to
+	// unblock the logging goroutine and wait for it to drain before the
+	// test is allowed to finish.
+	t.Cleanup(func() {
+		_ = w.Close()
+		<-done
+	})
 
 	return w, nil
 }

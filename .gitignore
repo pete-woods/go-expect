@@ -7,3 +7,7 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Test coverage
+coverage.out
+coverage.xml

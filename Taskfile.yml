@@ -72,6 +72,7 @@ tasks:
           -ignore ".idea/**" \
           -ignore ".github/**" \
           -ignore ".claude/**" \
+          -ignore "coverage.*" \
           {{.ARGS}}
 
   mod-tidy:
@@ -94,6 +95,14 @@ tasks:
       - go generate ./...
 
   # CI tasks
+
+  ci:test:
+    desc: Run unit tests with coverage and produce a Cobertura XML report
+    cmds:
+      - task: test
+        vars:
+          CLI_ARGS: -count=1 -covermode=atomic -coverprofile=coverage.out ./...
+      - go tool -modfile tools/go.mod gocover-cobertura < coverage.out > coverage.xml
 
   ci:check:
     desc: Check no uncommitted diffs after generate/fmt/tidy

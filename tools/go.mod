@@ -3,6 +3,7 @@ module tools
 go 1.26.2
 
 tool (
+	github.com/boumenot/gocover-cobertura
 	github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 	github.com/google/addlicense
 	gotest.tools/gotestsum
@@ -45,6 +46,7 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.0.2 // indirect
 	github.com/bombsimon/wsl/v4 v4.7.0 // indirect
 	github.com/bombsimon/wsl/v5 v5.8.0 // indirect
+	github.com/boumenot/gocover-cobertura v1.5.0 // indirect
 	github.com/breml/bidichk v0.3.3 // indirect
 	github.com/breml/errchkjson v0.4.1 // indirect
 	github.com/butuzov/ireturn v0.4.1 // indirect

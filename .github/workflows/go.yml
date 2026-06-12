@@ -4,42 +4,70 @@ on:
   push: {}
   pull_request: {}
 
-jobs:
+permissions:
+  contents: read
+  # Required to upload coverage data to GitHub code coverage.
+  code-quality: write
 
-  test-linux:
-    name: Test Linux
+jobs:
+  check:
+    name: Check
     runs-on: ubuntu-latest
     steps:
-    - name: Set up Go 1.x
-      uses: actions/setup-go@v2
-      with:
-        go-version: ^1.26
-      id: go
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-    - name: Checkout repository
-      uses: actions/checkout@v2
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
 
-    - name: Test
-      run: go test -v -covermode=count -coverprofile=coverage.out
+      - name: Set up Task
+        uses: go-task/setup-task@v2
 
-    - name: Export unit tests artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: unit-tests-report
-        path: ./coverage.out
+      - name: Run static checks
+        run: task check
 
-  test-windows:
-    name: Test Windows
-    runs-on: windows-latest
+  test:
+    name: Test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu, macos, windows]
+    runs-on: ${{ matrix.os }}-latest
     steps:
-    - name: Set up Go 1.x
-      uses: actions/setup-go@v2
-      with:
-        go-version: ^1.26
-      id: go
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          # Check out the PR head rather than the merge commit so coverage
+          # maps to the commit shown on the PR.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-    - name: Checkout repository
-      uses: actions/checkout@v2
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
 
-    - name: Test
-      run: go test -v
+      - name: Set up Task
+        uses: go-task/setup-task@v2
+
+      - name: Test
+        run: task ci:test
+
+      - name: Upload coverage report
+        # Forks can't upload coverage: the token lacks code-quality write.
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/upload-code-coverage@v1
+        with:
+          file: coverage.xml
+          language: Go
+          label: code-coverage/${{ matrix.os }}
+          # Code coverage may not be enabled for this repository yet; warn
+          # rather than fail the build when the upload is rejected.
+          fail-on-error: false
