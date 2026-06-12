@@ -90,28 +90,10 @@ jobs:
           # and the changelog range.
           fetch-depth: 0
 
+      - name: Set up Task
+        uses: go-task/setup-task@v2
+
       - name: Tag and release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          latest="$(git tag --list 'v0.1.*' --sort=-version:refname | head -n1)"
-          if [ -n "$latest" ]; then
-            next="v0.1.$(( ${latest##*.} + 1 ))"
-            range="${latest}..HEAD"
-          else
-            next="v0.1.0"
-            range="HEAD"
-          fi
-
-          {
-            echo "## Changelog"
-            echo
-            git log --no-merges --pretty='- %h %s' "$range"
-            echo
-          } > "$RUNNER_TEMP/notes.md"
-
-          gh release create "$next" \
-            --target "$GITHUB_SHA" \
-            --title "$next" \
-            --notes-file "$RUNNER_TEMP/notes.md" \
-            --generate-notes
+        run: task ci:release
