@@ -1,0 +1,110 @@
+// Copyright 2018 Netflix, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package expect
+
+import (
+	"bufio"
+	"errors"
+	"fmt"
+	"io"
+	"runtime/debug"
+	"strings"
+	"testing"
+	"time"
+)
+
+var (
+	ErrWrongAnswer = errors.New("wrong answer")
+)
+
+type Survey struct {
+	Prompt string
+	Answer string
+}
+
+func Prompt(in io.Reader, out io.Writer) error {
+	reader := bufio.NewReader(in)
+
+	for _, survey := range []Survey{
+		{
+			"What is 1+1?", "2",
+		},
+		{
+			"What is Netflix backwards?", "xilfteN",
+		},
+	} {
+		fmt.Fprint(out, fmt.Sprintf("%s: ", survey.Prompt))
+		text, err := reader.ReadString('\n')
+		if err != nil {
+			return err
+		}
+
+		fmt.Fprint(out, text)
+		text = strings.TrimSpace(text)
+		if text != survey.Answer {
+			return ErrWrongAnswer
+		}
+	}
+
+	return nil
+}
+
+func newTestConsole(t *testing.T, opts ...ConsoleOpt) (*Console, error) {
+	opts = append([]ConsoleOpt{
+		expectNoError(t),
+		sendNoError(t),
+		WithDefaultTimeout(time.Second),
+	}, opts...)
+	return NewTestConsole(t, opts...)
+}
+
+func expectNoError(t *testing.T) ConsoleOpt {
+	return WithExpectObserver(
+		func(matchers []Matcher, buf string, err error) {
+			if err == nil {
+				return
+			}
+			if len(matchers) == 0 {
+				t.Fatalf("Error occurred while matching %q: %s\n%s", buf, err, string(debug.Stack()))
+			} else {
+				var criteria []string
+				for _, matcher := range matchers {
+					criteria = append(criteria, fmt.Sprintf("%q", matcher.Criteria()))
+				}
+				t.Fatalf("Failed to find [%s] in %q: %s\n%s", strings.Join(criteria, ", "), buf, err, string(debug.Stack()))
+			}
+		},
+	)
+}
+
+func sendNoError(t *testing.T) ConsoleOpt {
+	return WithSendObserver(
+		func(msg string, n int, err error) {
+			if err != nil {
+				t.Fatalf("Failed to send %q: %s\n%s", msg, err, string(debug.Stack()))
+			}
+			if len(msg) != n {
+				t.Fatalf("Only sent %d of %d bytes for %q\n%s", n, len(msg), msg, string(debug.Stack()))
+			}
+		},
+	)
+}
+
+func testCloser(t *testing.T, closer io.Closer) {
+	if err := closer.Close(); err != nil {
+		t.Errorf("Close failed: %s", err)
+		debug.PrintStack()
+	}
+}

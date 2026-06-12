@@ -16,11 +16,10 @@ package expect
 
 import (
 	"bytes"
+	"errors"
 	"io"
-	"os"
 	"regexp"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -131,28 +130,28 @@ func (em *errorMatcher) Match(v interface{}) bool {
 	if !ok {
 		return false
 	}
-	return err == em.err
+	return errors.Is(err, em.err)
 }
 
 func (em *errorMatcher) Criteria() interface{} {
 	return em.err
 }
 
-// pathErrorMatcher fulfills the Matcher interface to match a specific os.PathError.
-type pathErrorMatcher struct {
-	pathError os.PathError
-}
+// closedErrMatcher fulfills the Matcher interface to match the
+// platform-specific errors returned when reading from a pseudo-terminal that
+// has been closed.
+type closedErrMatcher struct{}
 
-func (em *pathErrorMatcher) Match(v interface{}) bool {
-	pathError, ok := v.(*os.PathError)
+func (cm *closedErrMatcher) Match(v interface{}) bool {
+	err, ok := v.(error)
 	if !ok {
 		return false
 	}
-	return *pathError == em.pathError
+	return isClosedErr(err)
 }
 
-func (em *pathErrorMatcher) Criteria() interface{} {
-	return em.pathError
+func (cm *closedErrMatcher) Criteria() interface{} {
+	return "pseudo-terminal closed"
 }
 
 // stringMatcher fulfills the Matcher interface to match strings against a given
@@ -301,18 +300,13 @@ func EOF(opts *ExpectOpts) error {
 	return Error(io.EOF)(opts)
 }
 
-// PTSClosed adds an Expect condition to exit if we get an
-// "read /dev/ptmx: input/output error" error which can occur
-// on Linux while reading from the ptm after the pts is closed.
-// Further Reading:
-// https://github.com/kr/pty/issues/21#issuecomment-129381749
+// PTSClosed adds an Expect condition to exit if the pseudo-terminal was
+// closed while reading. The errors that signal this differ by platform: on
+// Linux reading from the ptm after the pts is closed returns EIO (see
+// https://github.com/kr/pty/issues/21#issuecomment-129381749), on Windows a
+// closed ConPTY surfaces as a broken pipe, and on all platforms a closed
+// Console returns a closed-file error.
 func PTSClosed(opts *ExpectOpts) error {
-	opts.Matchers = append(opts.Matchers, &pathErrorMatcher{
-		pathError: os.PathError{
-			Op:   "read",
-			Path: "/dev/ptmx",
-			Err:  syscall.Errno(0x5),
-		},
-	})
+	opts.Matchers = append(opts.Matchers, &closedErrMatcher{})
 	return nil
 }

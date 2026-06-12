@@ -12,107 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// These tests drive the Console in-process through its slave file (Tty),
+// which only exists on Unix. See expect_subprocess_test.go for the
+// cross-platform tests that attach a real subprocess.
+
+//go:build !windows
+
 package expect
 
 import (
-	"bufio"
-	"errors"
-	"fmt"
-	"io"
+	"context"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
-
-var (
-	ErrWrongAnswer = errors.New("wrong answer")
-)
-
-type Survey struct {
-	Prompt string
-	Answer string
-}
-
-func Prompt(in io.Reader, out io.Writer) error {
-	reader := bufio.NewReader(in)
-
-	for _, survey := range []Survey{
-		{
-			"What is 1+1?", "2",
-		},
-		{
-			"What is Netflix backwards?", "xilfteN",
-		},
-	} {
-		fmt.Fprint(out, fmt.Sprintf("%s: ", survey.Prompt))
-		text, err := reader.ReadString('\n')
-		if err != nil {
-			return err
-		}
-
-		fmt.Fprint(out, text)
-		text = strings.TrimSpace(text)
-		if text != survey.Answer {
-			return ErrWrongAnswer
-		}
-	}
-
-	return nil
-}
-
-func newTestConsole(t *testing.T, opts ...ConsoleOpt) (*Console, error) {
-	opts = append([]ConsoleOpt{
-		expectNoError(t),
-		sendNoError(t),
-		WithDefaultTimeout(time.Second),
-	}, opts...)
-	return NewTestConsole(t, opts...)
-}
-
-func expectNoError(t *testing.T) ConsoleOpt {
-	return WithExpectObserver(
-		func(matchers []Matcher, buf string, err error) {
-			if err == nil {
-				return
-			}
-			if len(matchers) == 0 {
-				t.Fatalf("Error occurred while matching %q: %s\n%s", buf, err, string(debug.Stack()))
-			} else {
-				var criteria []string
-				for _, matcher := range matchers {
-					criteria = append(criteria, fmt.Sprintf("%q", matcher.Criteria()))
-				}
-				t.Fatalf("Failed to find [%s] in %q: %s\n%s", strings.Join(criteria, ", "), buf, err, string(debug.Stack()))
-			}
-		},
-	)
-}
-
-func sendNoError(t *testing.T) ConsoleOpt {
-	return WithSendObserver(
-		func(msg string, n int, err error) {
-			if err != nil {
-				t.Fatalf("Failed to send %q: %s\n%s", msg, err, string(debug.Stack()))
-			}
-			if len(msg) != n {
-				t.Fatalf("Only sent %d of %d bytes for %q\n%s", n, len(msg), msg, string(debug.Stack()))
-			}
-		},
-	)
-}
-
-func testCloser(t *testing.T, closer io.Closer) {
-	if err := closer.Close(); err != nil {
-		t.Errorf("Close failed: %s", err)
-		debug.PrintStack()
-	}
-}
 
 func TestExpectf(t *testing.T) {
 	t.Parallel()
@@ -322,6 +240,31 @@ func TestConsoleChain(t *testing.T) {
 
 	testCloser(t, c1.Tty())
 	wg1.Wait()
+}
+
+func TestStartControllingTty(t *testing.T) {
+	t.Parallel()
+
+	c, err := newTestConsole(t)
+	if err != nil {
+		t.Fatalf("Expected no error but got '%s'", err)
+	}
+	defer testCloser(t, c)
+
+	// Opening /dev/tty only works if Start made the pty the child's
+	// controlling terminal.
+	cmd := exec.Command("sh", "-c", "echo answer-from-ctty > /dev/tty")
+	if err := c.Start(cmd); err != nil {
+		t.Fatalf("Expected no error but got '%s'", err)
+	}
+
+	c.ExpectString("answer-from-ctty")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := WaitProcess(ctx, cmd); err != nil {
+		t.Errorf("Expected no error but got '%s'", err)
+	}
 }
 
 func TestEditor(t *testing.T) {

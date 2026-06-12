@@ -1,4 +1,4 @@
-// Copyright 2018 Netflix, Inc.
+// Copyright 2026 Pete Steyert-Woods
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,81 +15,117 @@
 package expect
 
 import (
+	"bytes"
 	"io"
 	"os"
+	"sync"
 	"time"
 )
 
-// PassthroughPipe is pipes data from a io.Reader and allows setting a read
+// PassthroughPipe pipes data from a io.Reader and allows setting a read
 // deadline. If a timeout is reached the error is returned, otherwise the error
-// from the provided io.Reader is returned is passed through instead.
+// from the provided io.Reader is passed through instead.
+//
+// The implementation is intentionally not backed by an os.Pipe so that it
+// works with readers whose platform offers no deadline support (e.g. the
+// ConPTY output pipe on Windows).
 type PassthroughPipe struct {
-	reader *os.File
-	errC   chan error
+	mu       sync.Mutex
+	cond     *sync.Cond
+	buf      bytes.Buffer
+	err      error
+	deadline time.Time
+	timer    *time.Timer
+	closed   bool
 }
 
 // NewPassthroughPipe returns a new pipe for a io.Reader that passes through
 // non-timeout errors.
 func NewPassthroughPipe(reader io.Reader) (*PassthroughPipe, error) {
-	pipeReader, pipeWriter, err := os.Pipe()
-	if err != nil {
-		return nil, err
-	}
+	pp := &PassthroughPipe{}
+	pp.cond = sync.NewCond(&pp.mu)
 
-	errC := make(chan error, 1)
 	go func() {
-		defer close(errC)
-		_, readerErr := io.Copy(pipeWriter, reader)
-		if readerErr == nil {
-			// io.Copy reads from reader until EOF, and a successful Copy returns
-			// err == nil. We set it back to io.EOF to surface the error to Expect.
-			readerErr = io.EOF
+		chunk := make([]byte, 32*1024)
+		for {
+			n, err := reader.Read(chunk)
+			pp.mu.Lock()
+			if n > 0 {
+				pp.buf.Write(chunk[:n])
+			}
+			if err != nil {
+				pp.err = err
+				pp.cond.Broadcast()
+				pp.mu.Unlock()
+				return
+			}
+			pp.cond.Broadcast()
+			pp.mu.Unlock()
 		}
-
-		// Closing the pipeWriter will unblock the pipeReader.Read.
-		err = pipeWriter.Close()
-		if err != nil {
-			// If we are unable to close the pipe, and the pipe isn't already closed,
-			// the caller will hang indefinitely.
-			panic(err)
-			return
-		}
-
-		// When an error is read from reader, we need it to passthrough the err to
-		// callers of (*PassthroughPipe).Read.
-		errC <- readerErr
 	}()
 
-	return &PassthroughPipe{
-		reader: pipeReader,
-		errC:   errC,
-	}, nil
+	return pp, nil
 }
 
 func (pp *PassthroughPipe) Read(p []byte) (n int, err error) {
-	n, err = pp.reader.Read(p)
-	if err != nil {
-		if os.IsTimeout(err) {
-			return n, err
-		}
+	pp.mu.Lock()
+	defer pp.mu.Unlock()
 
-		// If the pipe is closed, this is the second time calling Read on
-		// PassthroughPipe, so just return the error from the os.Pipe io.Reader.
-		perr, ok := <-pp.errC
-		if !ok {
-			return n, err
+	for {
+		// Match os.File semantics: once the deadline has passed all reads
+		// fail, even if data is available.
+		if !pp.deadline.IsZero() && !time.Now().Before(pp.deadline) {
+			return 0, os.ErrDeadlineExceeded
 		}
-
-		return n, perr
+		if pp.buf.Len() > 0 {
+			return pp.buf.Read(p)
+		}
+		if pp.err != nil {
+			return 0, pp.err
+		}
+		if pp.closed {
+			return 0, io.ErrClosedPipe
+		}
+		pp.cond.Wait()
 	}
-
-	return n, nil
 }
 
+// Close unblocks any pending reads. It does not close the underlying reader.
 func (pp *PassthroughPipe) Close() error {
-	return pp.reader.Close()
+	pp.mu.Lock()
+	defer pp.mu.Unlock()
+	pp.closed = true
+	if pp.timer != nil {
+		pp.timer.Stop()
+		pp.timer = nil
+	}
+	pp.cond.Broadcast()
+	return nil
 }
 
+// SetReadDeadline sets the deadline for future and pending Read calls. A zero
+// value for t means Read will not time out.
 func (pp *PassthroughPipe) SetReadDeadline(t time.Time) error {
-	return pp.reader.SetReadDeadline(t)
+	pp.mu.Lock()
+	defer pp.mu.Unlock()
+
+	pp.deadline = t
+	if pp.timer != nil {
+		pp.timer.Stop()
+		pp.timer = nil
+	}
+	if !t.IsZero() {
+		d := time.Until(t)
+		if d < 0 {
+			d = 0
+		}
+		// Wake up pending reads once the deadline expires.
+		pp.timer = time.AfterFunc(d, func() {
+			pp.mu.Lock()
+			pp.cond.Broadcast()
+			pp.mu.Unlock()
+		})
+	}
+	pp.cond.Broadcast()
+	return nil
 }

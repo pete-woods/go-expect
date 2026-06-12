@@ -13,7 +13,13 @@
 // limitations under the License.
 
 // Package expect provides an expect-like interface to automate control of
-// applications. It is unlike expect in that it does not spawn or manage
-// process lifecycle. This package only focuses on expecting output and sending
-// input through it's psuedoterminal.
+// interactive applications through a pseudo-terminal. It works
+// cross-platform: on Unix the Console is backed by a classic pty pair, on
+// Windows by a ConPTY pseudo console (via github.com/charmbracelet/x/xpty).
+//
+// Attach a command to the Console with Console.Start. On Unix the slave file
+// is also available via Console.Tty for in-process use or manual stdio
+// assignment; Windows ConPTY has no slave file, so Start is the only way to
+// attach a process there, and processes started this way must be waited on
+// with WaitProcess instead of exec.Cmd.Wait.
 package expect

@@ -16,15 +16,14 @@ package expect
 
 import (
 	"bufio"
-	"fmt"
+	"context"
 	"io"
-	"io/ioutil"
 	"log"
-	"os"
+	"os/exec"
 	"time"
 	"unicode/utf8"
 
-	"github.com/creack/pty"
+	"github.com/charmbracelet/x/xpty"
 )
 
 // Console is an interface to automate input and output for interactive
@@ -33,8 +32,7 @@ import (
 // and multiplex its output to other writers.
 type Console struct {
 	opts            ConsoleOpts
-	ptm             *os.File
-	pts             *os.File
+	pty             xpty.Pty
 	passthroughPipe *PassthroughPipe
 	runeReader      *bufio.Reader
 	closers         []io.Closer
@@ -52,12 +50,14 @@ type ConsoleOpts struct {
 	ExpectObservers []ExpectObserver
 	SendObservers   []SendObserver
 	ReadTimeout     *time.Duration
+	TermWidth       int
+	TermHeight      int
 }
 
 // ExpectObserver provides an interface for a function callback that will
 // be called after each Expect operation.
-// matchers will be the list of active matchers when an error occurred,
-//   or a list of matchers that matched `buf` when err is nil.
+// matchers will be the list of active matchers when an error occurred, or a
+// list of matchers that matched `buf` when err is nil.
 // buf is the captured output that was matched against.
 // err is error that might have occurred. May be nil.
 type ExpectObserver func(matchers []Matcher, buf string, err error)
@@ -133,10 +133,22 @@ func WithDefaultTimeout(timeout time.Duration) ConsoleOpt {
 	}
 }
 
+// WithTermSize sets the width and height of the Console's terminal. The
+// default is 80x24.
+func WithTermSize(width, height int) ConsoleOpt {
+	return func(opts *ConsoleOpts) error {
+		opts.TermWidth = width
+		opts.TermHeight = height
+		return nil
+	}
+}
+
 // NewConsole returns a new Console with the given options.
 func NewConsole(opts ...ConsoleOpt) (*Console, error) {
 	options := ConsoleOpts{
-		Logger: log.New(ioutil.Discard, "", 0),
+		Logger:     log.New(io.Discard, "", 0),
+		TermWidth:  80,
+		TermHeight: 24,
 	}
 
 	for _, opt := range opts {
@@ -145,13 +157,13 @@ func NewConsole(opts ...ConsoleOpt) (*Console, error) {
 		}
 	}
 
-	ptm, pts, err := pty.Open()
+	pty, err := xpty.NewPty(options.TermWidth, options.TermHeight)
 	if err != nil {
 		return nil, err
 	}
-	closers := append(options.Closers, pts, ptm)
+	closers := append(options.Closers, pty)
 
-	passthroughPipe, err := NewPassthroughPipe(ptm)
+	passthroughPipe, err := NewPassthroughPipe(pty)
 	if err != nil {
 		return nil, err
 	}
@@ -159,8 +171,7 @@ func NewConsole(opts ...ConsoleOpt) (*Console, error) {
 
 	c := &Console{
 		opts:            options,
-		ptm:             ptm,
-		pts:             pts,
+		pty:             pty,
 		passthroughPipe: passthroughPipe,
 		runeReader:      bufio.NewReaderSize(passthroughPipe, utf8.UTFMax),
 		closers:         closers,
@@ -178,28 +189,35 @@ func NewConsole(opts ...ConsoleOpt) (*Console, error) {
 	return c, nil
 }
 
-// Tty returns Console's pts (slave part of a pty). A pseudoterminal, or pty is
-// a pair of psuedo-devices, one of which, the slave, emulates a real text
-// terminal device.
-func (c *Console) Tty() *os.File {
-	return c.pts
+// Pty returns the underlying cross-platform pseudo-terminal. On Unix this is
+// a *xpty.UnixPty wrapping a classic pty pair, on Windows a *xpty.ConPty
+// wrapping a ConPTY pseudo console.
+func (c *Console) Pty() xpty.Pty {
+	return c.pty
+}
+
+// WaitProcess waits for a process started with Console.Start to exit. This
+// exists because on Windows cmd.Wait() does not work with processes spawned
+// on a ConPTY. On other platforms it simply calls cmd.Wait().
+func WaitProcess(ctx context.Context, cmd *exec.Cmd) error {
+	return xpty.WaitProcess(ctx, cmd)
 }
 
 // Read reads bytes b from Console's tty.
 func (c *Console) Read(b []byte) (int, error) {
-	return c.ptm.Read(b)
+	return c.pty.Read(b)
 }
 
 // Write writes bytes b to Console's tty.
 func (c *Console) Write(b []byte) (int, error) {
 	c.Logf("console write: %q", b)
-	return c.ptm.Write(b)
+	return c.pty.Write(b)
 }
 
-// Fd returns Console's file descripting referencing the master part of its
-// pty.
+// Fd returns Console's file descriptor. On Unix this is the master part of
+// its pty, on Windows the ConPTY handle.
 func (c *Console) Fd() uintptr {
-	return c.ptm.Fd()
+	return c.pty.Fd()
 }
 
 // Close closes Console's tty. Calling Close will unblock Expect and ExpectEOF.
@@ -216,16 +234,18 @@ func (c *Console) Close() error {
 // Send writes string s to Console's tty.
 func (c *Console) Send(s string) (int, error) {
 	c.Logf("console send: %q", s)
-	n, err := c.ptm.WriteString(s)
+	n, err := c.pty.Write([]byte(s))
 	for _, observer := range c.opts.SendObservers {
 		observer(s, n, err)
 	}
 	return n, err
 }
 
-// SendLine writes string s to Console's tty with a trailing newline.
+// SendLine writes string s to Console's tty with a trailing line separator:
+// "\n" on Unix, and "\r" on Windows where the ConPTY line discipline treats
+// carriage return as enter.
 func (c *Console) SendLine(s string) (int, error) {
-	return c.Send(fmt.Sprintf("%s\n", s))
+	return c.Send(s + lineSeparator)
 }
 
 // Log prints to Console's logger.
