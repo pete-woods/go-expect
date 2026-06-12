@@ -2,7 +2,7 @@
 
 ![Go](https://github.com/pete-woods/go-expect/workflows/Go/badge.svg)
 [![GoDoc](https://godoc.org/github.com/pete-woods/go-expect?status.svg)](https://godoc.org/github.com/pete-woods/go-expect)
-[![NetflixOSS Lifecycle](https://img.shields.io/osslifecycle/pete-woods/go-expect.svg)]()
+[![OSS Lifecycle](https://img.shields.io/osslifecycle/pete-woods/go-expect.svg)]()
 
 Package expect provides an expect-like interface to automate control of interactive applications through a pseudo-terminal.
 
