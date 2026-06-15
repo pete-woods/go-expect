@@ -6,7 +6,11 @@
 
 Package expect provides an expect-like interface to automate control of interactive applications through a pseudo-terminal.
 
-It is cross-platform: on Unix the console is backed by a classic pty pair, on Windows by a [ConPTY](https://learn.microsoft.com/en-us/windows/console/creating-a-pseudoconsole-session) pseudo console, via [github.com/charmbracelet/x/xpty](https://github.com/charmbracelet/x/tree/main/xpty).
+This project is a fork of the original dead [Netflix/go-expect](https://github.com/Netflix/go-expect), with the goal of
+providing cross-platform support (specifcally Windows) via [charmbracelet/x/xpty](https://github.com/charmbracelet/x/tree/main/xpty).
+- On Unix the console is backed by a classic pty pair, backed by [creack/pty](https://github.com/creack/pty).
+- on Windows by a [ConPTY](https://learn.microsoft.com/en-us/windows/console/creating-a-pseudoconsole-session) pseudo console,
+  backed by [charmbracelet/x/conpty](https://github.com/charmbracelet/x/tree/main/conpty).
 
 ## Usage
 
