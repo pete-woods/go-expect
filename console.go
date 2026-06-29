@@ -247,7 +247,21 @@ func (c *Console) Fd() uintptr {
 }
 
 // Close closes Console's tty. Calling Close will unblock Expect and ExpectEOF.
+//
+// On Unix the data source's output may still be buffered in the pty when Close
+// is called. Closing the master end first — as the generic closer loop does —
+// discards that buffer, so output captured by a subsequent ExpectEOF is
+// intermittently empty under load. To avoid this we close the slave end first:
+// with no slave fd open anywhere a final master read returns the buffered bytes
+// followed by EOF. We then wait for the passthrough reader to reach that EOF,
+// so every byte lands in the pipe's buffer, before closing the master and the
+// remaining closers.
 func (c *Console) Close() error {
+	if unixPty, ok := c.pty.(*xpty.UnixPty); ok {
+		_ = unixPty.Slave().Close()
+		c.passthroughPipe.waitDrained()
+	}
+
 	for _, fd := range c.closers {
 		err := fd.Close()
 		if err != nil {

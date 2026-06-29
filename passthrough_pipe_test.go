@@ -45,6 +45,66 @@ func TestPassthroughPipe(t *testing.T) {
 	assert.Check(t, is.ErrorIs(err, pipeError))
 }
 
+// gatedReader blocks every Read until gate is closed, then returns its data on
+// the first read and io.EOF thereafter. It models a source (like a pty master)
+// holding buffered bytes the passthrough goroutine has not yet consumed when
+// the pipe is torn down.
+type gatedReader struct {
+	gate <-chan struct{}
+	data []byte
+	sent bool
+}
+
+func (r *gatedReader) Read(p []byte) (int, error) {
+	<-r.gate
+	if r.sent {
+		return 0, io.EOF
+	}
+	r.sent = true
+	return copy(p, r.data), nil
+}
+
+// TestPassthroughPipeReadShortCircuitsOnCloseBeforeDrain documents the hazard
+// the drain fix addresses: with the source's bytes still unconsumed, a Read
+// after Close short-circuits to ErrClosedPipe and the data is lost.
+func TestPassthroughPipeReadShortCircuitsOnCloseBeforeDrain(t *testing.T) {
+	gate := make(chan struct{}) // never closed: the reader goroutine stays blocked
+	defer close(gate)
+
+	pp, err := NewPassthroughPipe(&gatedReader{gate: gate, data: []byte("buffered output")})
+	assert.NilError(t, err)
+	assert.NilError(t, pp.Close())
+
+	// Nothing has been buffered yet, so Read sees closed and gives up — the
+	// bytes the source is about to produce would never be read.
+	_, err = pp.Read(make([]byte, 16))
+	assert.Check(t, is.ErrorIs(err, io.ErrClosedPipe))
+}
+
+// TestPassthroughPipeWaitDrainedCapturesBufferedData verifies the fix: even
+// when Close runs before the source's bytes are consumed, waitDrained blocks
+// until they are buffered, so they remain readable.
+func TestPassthroughPipeWaitDrainedCapturesBufferedData(t *testing.T) {
+	gate := make(chan struct{})
+
+	pp, err := NewPassthroughPipe(&gatedReader{gate: gate, data: []byte("buffered output")})
+	assert.NilError(t, err)
+
+	// Close while the reader goroutine is still blocked on the gate — the
+	// teardown ordering that used to drop output.
+	assert.NilError(t, pp.Close())
+
+	// The source now yields its buffered bytes followed by EOF.
+	close(gate)
+
+	// waitDrained must block until those bytes land in the buffer.
+	pp.waitDrained()
+
+	out, err := io.ReadAll(pp)
+	assert.NilError(t, err)
+	assert.Check(t, is.Equal(string(out), "buffered output"))
+}
+
 func TestPassthroughPipeTimeout(t *testing.T) {
 	r, w := io.Pipe()
 
