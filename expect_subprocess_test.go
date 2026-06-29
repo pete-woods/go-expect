@@ -20,15 +20,24 @@
 package expect
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"gotest.tools/v3/assert"
+	is "gotest.tools/v3/assert/cmp"
 )
+
+// echoPayload is the output the echo helper process writes before exiting. It
+// spans several lines so a dropped read is obvious, and is small enough to fit
+// the pty buffer in a single write.
+const echoPayload = "line one\nline two\nline three\n"
 
 // TestHelperProcess is not a real test. It is the subprocess driven by the
 // tests below, answering the Prompt survey on its stdio.
@@ -41,6 +50,25 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(1)
 	}
 	os.Exit(0)
+}
+
+// TestEchoHelperProcess is not a real test. It writes echoPayload to stdout and
+// exits immediately, modelling a command whose entire output is buffered in the
+// pty by the time it exits.
+func TestEchoHelperProcess(t *testing.T) {
+	if os.Getenv("GO_EXPECT_ECHO_HELPER_PROCESS") != "1" {
+		return
+	}
+
+	fmt.Print(echoPayload)
+	os.Exit(0)
+}
+
+func echoHelperCommand(t *testing.T) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestEchoHelperProcess$")
+	cmd.Env = append(os.Environ(), "GO_EXPECT_ECHO_HELPER_PROCESS=1")
+	return cmd
 }
 
 func helperCommand(t *testing.T) *exec.Cmd {
@@ -124,6 +152,51 @@ func TestSubprocessWrongAnswer(t *testing.T) {
 	testCloser(t, c)
 	_, err = c.ExpectEOF()
 	assert.Check(t, err)
+}
+
+// TestSubprocessCloseDrainsBufferedOutput reproduces the close/drain race that
+// intermittently produced empty captured output under load: a command writes
+// its output, exits, and only then is the Console closed and drained. Closing
+// the pty master before that output is read would discard it; this test asserts
+// every byte survives. It runs many iterations because the failure is a
+// goroutine-scheduling race that a single run can mask.
+//
+// The race and its fix are specific to the Unix pty master/slave pair. The
+// Windows ConPTY has no slave file and a different teardown path (covered by
+// TestSubprocess), where a post-close read can surface ERROR_INVALID_FUNCTION
+// rather than a recognised EOF; this stress test does not target that.
+func TestSubprocessCloseDrainsBufferedOutput(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("targets the Unix pty master/slave drain race; ConPTY teardown differs")
+	}
+
+	for i := range 64 {
+		t.Run(fmt.Sprintf("iteration-%d", i), func(t *testing.T) {
+			t.Parallel()
+
+			var stdout bytes.Buffer
+			c, err := newTestConsole(t, WithStdout(&stdout))
+			assert.NilError(t, err)
+
+			cmd := echoHelperCommand(t)
+			assert.NilError(t, c.Start(cmd))
+			assert.Equal(t, waitHelper(t, cmd), 0)
+
+			// Mirror the consumer pattern: the process has exited, so close
+			// the Console to unblock the drain, then read everything it wrote.
+			testCloser(t, c)
+			out, err := c.ExpectEOF()
+			assert.NilError(t, err)
+
+			// The pty line discipline translates \n to \r\n; strip the
+			// carriage returns before comparing against the payload.
+			gotEOF := strings.ReplaceAll(out, "\r\n", "\n")
+			gotStdout := strings.ReplaceAll(stdout.String(), "\r\n", "\n")
+			assert.Check(t, is.Contains(gotEOF, echoPayload))
+			assert.Check(t, is.Contains(gotStdout, echoPayload))
+		})
+	}
 }
 
 func TestSubprocessReadTimeout(t *testing.T) {

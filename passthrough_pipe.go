@@ -37,15 +37,26 @@ type PassthroughPipe struct {
 	deadline time.Time
 	timer    *time.Timer
 	closed   bool
+	// done is closed when the reader goroutine has consumed the underlying
+	// reader to EOF (or error), so all available data has been buffered.
+	done chan struct{}
 }
+
+// drainTimeout bounds how long waitDrained blocks for the reader goroutine to
+// reach EOF on the underlying reader. In normal use the data source (e.g. a
+// pty's child process) has already exited, so EOF is immediate; the timeout
+// only guards against a caller draining while the source is still producing,
+// so a drain can never block indefinitely.
+const drainTimeout = 5 * time.Second
 
 // NewPassthroughPipe returns a new pipe for a io.Reader that passes through
 // non-timeout errors.
 func NewPassthroughPipe(reader io.Reader) (*PassthroughPipe, error) {
-	pp := &PassthroughPipe{}
+	pp := &PassthroughPipe{done: make(chan struct{})}
 	pp.cond = sync.NewCond(&pp.mu)
 
 	go func() {
+		defer close(pp.done)
 		chunk := make([]byte, 32*1024)
 		for {
 			n, err := reader.Read(chunk)
@@ -65,6 +76,19 @@ func NewPassthroughPipe(reader io.Reader) (*PassthroughPipe, error) {
 	}()
 
 	return pp, nil
+}
+
+// waitDrained blocks until the reader goroutine has consumed the underlying
+// reader to EOF (or error) — guaranteeing every available byte is buffered and
+// retrievable by Read — or until drainTimeout elapses. Callers tearing down a
+// pipe should call this, once the data source has stopped producing, before
+// closing the underlying reader: closing it first can discard not-yet-consumed
+// bytes (a closed pty master drops its buffer), intermittently losing output.
+func (pp *PassthroughPipe) waitDrained() {
+	select {
+	case <-pp.done:
+	case <-time.After(drainTimeout):
+	}
 }
 
 func (pp *PassthroughPipe) Read(p []byte) (n int, err error) {
