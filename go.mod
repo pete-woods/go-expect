@@ -3,8 +3,8 @@ module github.com/pete-woods/go-expect
 go 1.25.0
 
 require (
-	github.com/charmbracelet/x/xpty v0.1.3
-	golang.org/x/sys v0.46.0
+	github.com/charmbracelet/x/xpty v0.1.4
+	golang.org/x/sys v0.47.0
 	gotest.tools/v3 v3.5.2
 )
 
